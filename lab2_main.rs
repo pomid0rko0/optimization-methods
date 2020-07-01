@@ -2,9 +2,9 @@
 
 use nalgebra::Vector2;
 
-mod solvers;
-use solvers::descent_methods::*;
-use solvers::variable_metric_methods::*;
+mod searchers;
+use searchers::descent_methods::*;
+use searchers::variable_metric_methods::*;
 
 use std::fs;
 

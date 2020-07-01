@@ -105,7 +105,7 @@ where
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
+        use crate::searchers::extremum_searcher::Search;
         Self::new(x0, f, comparator, method, g, eps, max_iters).result()
     }
     pub fn Mnimimum(
@@ -116,7 +116,7 @@ where
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
+        use crate::searchers::extremum_searcher::Search;
         Self::new(x0, f, std::cmp::Ordering::Less, method, g, eps, max_iters).result()
     }
     pub fn Maximum(
@@ -127,7 +127,7 @@ where
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
+        use crate::searchers::extremum_searcher::Search;
         Self::new(
             x0,
             f,
