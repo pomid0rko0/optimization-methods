@@ -1,7 +1,7 @@
 use super::descent_methods;
 use super::descent_methods::Method;
-use super::minimize;
-use super::minimize::{FinalResult, IterationResult};
+use super::extremum_searcher;
+use super::extremum_searcher::{FinalResult, IterationResult};
 use nalgebra::{allocator::Allocator, DefaultAllocator, DimName, RealField, VectorN};
 use std::sync::Arc;
 
@@ -48,7 +48,7 @@ where
     }
 }
 
-pub struct Minimize<Scalar, Dimension>
+pub struct Search<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -57,6 +57,7 @@ where
     x: VectorN<Scalar, Dimension>,
     dx: VectorN<Scalar, Dimension>,
     f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+    comparator: std::cmp::Ordering,
     func_calls: usize,
     iters: usize,
     method: Method,
@@ -66,7 +67,7 @@ where
     got_result: bool,
 }
 
-impl<Scalar, Dimension> Minimize<Scalar, Dimension>
+impl<Scalar, Dimension> Search<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -75,6 +76,7 @@ where
     pub fn new(
         x0: VectorN<Scalar, Dimension>,
         f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        comparator: std::cmp::Ordering,
         method: Method,
         g: Vec<Bound<Scalar, Dimension>>,
         eps: Scalar,
@@ -83,6 +85,7 @@ where
         Self {
             x: x0,
             f,
+            comparator,
             dx: VectorN::<Scalar, Dimension>::from_element(Scalar::max_value()),
             iters: 0,
             func_calls: 0,
@@ -96,19 +99,50 @@ where
     pub fn result(
         x0: VectorN<Scalar, Dimension>,
         f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        comparator: std::cmp::Ordering,
         method: Method,
         g: Vec<Bound<Scalar, Dimension>>,
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        <Self as minimize::Minimize<VectorN<Scalar, Dimension>>>::result(&mut Self::new(
-            x0, f, method, g, eps, max_iters,
-        ))
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(x0, f, comparator, method, g, eps, max_iters).result()
+    }
+    pub fn Mnimimum(
+        x0: VectorN<Scalar, Dimension>,
+        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        method: Method,
+        g: Vec<Bound<Scalar, Dimension>>,
+        eps: Scalar,
+        max_iters: usize,
+    ) -> FinalResult<VectorN<Scalar, Dimension>> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(x0, f, std::cmp::Ordering::Less, method, g, eps, max_iters).result()
+    }
+    pub fn Maximum(
+        x0: VectorN<Scalar, Dimension>,
+        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        method: Method,
+        g: Vec<Bound<Scalar, Dimension>>,
+        eps: Scalar,
+        max_iters: usize,
+    ) -> FinalResult<VectorN<Scalar, Dimension>> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(
+            x0,
+            f,
+            std::cmp::Ordering::Greater,
+            method,
+            g,
+            eps,
+            max_iters,
+        )
+        .result()
     }
 }
 
-impl<Scalar, Dimension> minimize::Minimize<VectorN<Scalar, Dimension>>
-    for Minimize<Scalar, Dimension>
+impl<Scalar, Dimension> extremum_searcher::Search<VectorN<Scalar, Dimension>>
+    for Search<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -128,7 +162,7 @@ where
     }
 }
 
-impl<Scalar, Dimension> Iterator for Minimize<Scalar, Dimension>
+impl<Scalar, Dimension> Iterator for Search<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -158,13 +192,14 @@ where
         }
         let g = self.g.clone();
         let f = self.f.clone();
-        let result = descent_methods::Minimize::result(
+        let result = descent_methods::Search::result(
             self.x.clone(),
             Arc::new(move |x: VectorN<Scalar, Dimension>| -> Scalar {
                 g.iter().fold(f(x.clone()), |result, i| {
                     result + i.coefficient * (i.penalty)((i.function)(x.clone()))
                 })
             }),
+            self.comparator,
             self.method.clone(),
             self.eps,
             self.max_iters,

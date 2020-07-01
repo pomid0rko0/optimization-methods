@@ -1,10 +1,11 @@
-use super::minimize;
-use super::minimize::{FinalResult, IterationResult};
+use super::extremum_searcher;
+use super::extremum_searcher::{FinalResult, IterationResult};
 use nalgebra::RealField;
 use std::sync::Arc;
 
 fn get_interval<Scalar>(
     f: Arc<dyn Fn(Scalar) -> Scalar>,
+    comparator: std::cmp::Ordering,
     x0: Scalar,
     delta: Scalar,
 ) -> (Scalar, Scalar, usize)
@@ -17,19 +18,19 @@ where
     let mut f1 = f(x);
     let mut f2 = f(x + delta);
 
-    if f1 > f2 {
+    if f2.partial_cmp(&f1).unwrap() == comparator {
         h = delta;
     } else {
         func_calls += 1;
         f2 = f(x - delta);
-        if f1 > f2 {
+        if f2.partial_cmp(&f1).unwrap() == comparator {
             h = -delta;
         } else {
             return (x - delta, x + delta, 3);
         }
     }
     x = x + h;
-    while f1 > f2 {
+    while f2.partial_cmp(&f1).unwrap() == comparator {
         h = h * Scalar::from_i8(2).unwrap();
         x = x + h;
         f1 = f2;
@@ -41,7 +42,7 @@ where
     (left, right, func_calls)
 }
 
-trait OneDimensionalMinimize<Scalar>: minimize::Minimize<Scalar>
+trait OneDimensionalSearcher<Scalar>: extremum_searcher::Search<Scalar>
 where
     Scalar: Clone,
 {
@@ -63,6 +64,7 @@ struct Fibonacci<Scalar> {
     func_calls: usize,
     eps: Scalar,
     max_iters: usize,
+    comparator: std::cmp::Ordering,
 }
 
 impl<Scalar> Fibonacci<Scalar>
@@ -73,6 +75,7 @@ where
         left: Scalar,
         right: Scalar,
         f: Arc<dyn Fn(Scalar) -> Scalar>,
+        comparator: std::cmp::Ordering,
         eps: Scalar,
         max_iters: usize,
     ) -> Self {
@@ -105,13 +108,14 @@ where
             func_calls: 2,
             eps,
             max_iters,
+            comparator,
         }
     }
 }
 
-impl<Scalar> OneDimensionalMinimize<Scalar> for Fibonacci<Scalar> where Scalar: RealField {}
+impl<Scalar> OneDimensionalSearcher<Scalar> for Fibonacci<Scalar> where Scalar: RealField {}
 
-impl<Scalar> minimize::Minimize<Scalar> for Fibonacci<Scalar>
+impl<Scalar> extremum_searcher::Search<Scalar> for Fibonacci<Scalar>
 where
     Scalar: RealField,
 {
@@ -144,7 +148,7 @@ where
             false
         };
         let _x = (self.right + self.left) / Scalar::from_i8(2).unwrap();
-        if self.f1 < self.f2 {
+        if self.f1.partial_cmp(&self.f2).unwrap() == self.comparator {
             self.right = self.x2;
             self.x2 = self.x1;
             self.x1 = self.left
@@ -178,7 +182,7 @@ pub enum Method {
     Fibonacci,
 }
 
-pub struct Minimize<Scalar>
+pub struct Search<Scalar>
 where
     Scalar: RealField,
 {
@@ -186,23 +190,24 @@ where
     dx: Scalar,
     func_calls: usize,
     iters: usize,
-    method: Box<dyn OneDimensionalMinimize<Scalar>>,
+    method: Box<dyn extremum_searcher::Search<Scalar>>,
 }
 
-impl<Scalar> Minimize<Scalar>
+impl<Scalar> Search<Scalar>
 where
     Scalar: RealField,
 {
     pub fn new(
         x0: Scalar,
         f: Arc<dyn Fn(Scalar) -> Scalar>,
+        comparator: std::cmp::Ordering,
         method: Method,
         eps: Scalar,
         max_iters: usize,
     ) -> Self {
-        let (left, right, func_calls) = get_interval(f.clone(), x0, eps);
+        let (left, right, func_calls) = get_interval(f.clone(), comparator, x0, eps);
         let m = match method {
-            Method::Fibonacci => Fibonacci::new(left, right, f, eps, max_iters),
+            Method::Fibonacci => Fibonacci::new(left, right, f, comparator, eps, max_iters),
         };
         Self {
             x: (right + left) / Scalar::from_i8(2).unwrap(),
@@ -215,15 +220,37 @@ where
     pub fn result(
         x0: Scalar,
         f: Arc<dyn Fn(Scalar) -> Scalar>,
+        comparator: std::cmp::Ordering,
         method: Method,
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<Scalar> {
-        <Self as minimize::Minimize<Scalar>>::result(&mut Self::new(x0, f, method, eps, max_iters))
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(x0, f, comparator, method, eps, max_iters).result()
+    }
+    pub fn Mnimimum(
+        x0: Scalar,
+        f: Arc<dyn Fn(Scalar) -> Scalar>,
+        method: Method,
+        eps: Scalar,
+        max_iters: usize,
+    ) -> FinalResult<Scalar> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(x0, f, std::cmp::Ordering::Less, method, eps, max_iters).result()
+    }
+    pub fn Maximum(
+        x0: Scalar,
+        f: Arc<dyn Fn(Scalar) -> Scalar>,
+        method: Method,
+        eps: Scalar,
+        max_iters: usize,
+    ) -> FinalResult<Scalar> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(x0, f, std::cmp::Ordering::Greater, method, eps, max_iters).result()
     }
 }
 
-impl<Scalar> minimize::Minimize<Scalar> for Minimize<Scalar>
+impl<Scalar> extremum_searcher::Search<Scalar> for Search<Scalar>
 where
     Scalar: RealField,
 {
@@ -241,7 +268,7 @@ where
     }
 }
 
-impl<Scalar> Iterator for Minimize<Scalar>
+impl<Scalar> Iterator for Search<Scalar>
 where
     Scalar: RealField,
 {

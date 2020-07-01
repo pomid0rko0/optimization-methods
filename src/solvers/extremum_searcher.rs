@@ -61,16 +61,20 @@ where
     }
 }
 
-pub trait Minimize<X: Clone>: Iterator<Item = IterationResult<X>> {
+pub trait Search<X: Clone>: Iterator<Item = IterationResult<X>> {
     fn x(&self) -> X;
     fn dx(&self) -> X;
     fn func_calls(&self) -> usize;
     fn iters(&self) -> usize;
     fn result(&mut self) -> FinalResult<X> {
-        let x = self.x();
-        self.take_while(|i| !i.is_extra())
-            .fold(FinalResult::new(x, 0, 0), |result, i| {
+        let x = self.x().clone();
+        let iters = self.iters();
+        let func_calls = self.func_calls();
+        self.take_while(|i| !i.is_extra()).fold(
+            FinalResult::new(x, iters, func_calls),
+            |result, i| {
                 FinalResult::new(i.x(), result.iters + 1, result.func_calls + i.func_calls())
-            })
+            },
+        )
     }
 }

@@ -1,78 +1,135 @@
-use super::extremum_searcher;
-use super::extremum_searcher::{FinalResult, IterationResult};
+extern crate rand;
+
+use super::minimize;
+use super::minimize::{FinalResult, IterationResult};
 use super::one_dimension_searchers;
 use nalgebra::{allocator::Allocator, DefaultAllocator, DimName, RealField, VectorN};
 use std::sync::Arc;
 
-trait DescentMethod<Scalar, Dimension>:
-    Iterator<Item = IterationResult<VectorN<Scalar, Dimension>>>
-    + extremum_searcher::Search<VectorN<Scalar, Dimension>>
+#[derive(Copy)]
+pub struct Area<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
-    DefaultAllocator: Allocator<Scalar, Dimension>,
 {
-    #[allow(non_snake_case)]
-    fn S(&self) -> VectorN<Scalar, Dimension>;
+    bounds: [(Scalar, Scalar); Dimension::dim()],
 }
 
-struct Gauss<Scalar, Dimension>
+impl<Scalar, Dimension> Area<Scalar, Dimension> {
+    pub fn V(&self) -> Scalar {
+        self.bounds
+            .iter()
+            .fold(Scalar::one(), |v, (left, right)| v * (right - left));
+    }
+    pub fn get_random_point(&self) -> VectorN<Scalar, Dimension> {
+        VectorN::<Scalr, Dimension>::from(
+            self.bounds
+                .iter()
+                .map(|(left, right)| self.rng.gen_range(left, right))
+                .collect(),
+        )
+    }
+}
+
+trait RandomSearchMethod<Scalar, Dimension>:
+    Iterator<Item = IterationResult<VectorN<Scalar, Dimension>>>
+    + minimize::Minimize<VectorN<Scalar, Dimension>>
 where
     Scalar: RealField,
     Dimension: DimName,
     DefaultAllocator: Allocator<Scalar, Dimension>,
 {
+}
+
+struct Simple<Scalar, Dimension>
+where
+    Scalar: RealField,
+    Dimension: DimName,
+    DefaultAllocator: Allocator<Scalar, Dimension>,
+{
+    f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+    comparator: std::cmp::Ordering,
     x: VectorN<Scalar, Dimension>,
-    dx: VectorN<Scalar, Dimension>,
+    D: Area<Scalar>,
     func_calls: usize,
     iters: usize,
-    f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
-    eps: Scalar,
+    _f: Scalar,
     max_iters: usize,
-    comparator: std::cmp::Ordering,
+    rgn: rand::rngs::ThreadRng,
 }
 
-impl<Scalar, Dimension> Gauss<Scalar, Dimension>
+impl<Scalar, Dimension> Simple<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
     DefaultAllocator: Allocator<Scalar, Dimension>,
 {
     fn new(
-        x0: VectorN<Scalar, Dimension>,
+        D: Area<Scalar>,
         f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
         comparator: std::cmp::Ordering,
-        eps: Scalar,
-        max_iters: usize,
+        eps: VectorN<Scalar, DImnesnion>,
+        alpha: Scalar,
     ) -> Self {
         Self {
-            x: x0.clone(),
+            comparator,
+            x: D.get_random_point(),
+            D,
             dx: VectorN::<Scalar, Dimension>::from_element(Scalar::max_value()),
             f,
-            eps,
-            iters: 0,
-            func_calls: 0,
-            max_iters,
-            comparator,
+            _f: f(x),
+            iters: 1,
+            func_calls: 1,
+            max_iters: 1f64
+                .log(
+                    1 - alpha,
+                    1 - eps.iter().fold(Scalar::one() | result, ei | result * ei) / D.V(),
+                )
+                .ceil(),
+            rgn: rand::thread_rng(),
         }
+    }
+    pub fn result(
+        D: Area<Scalar>,
+        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        comparator: std::cmp::Ordering,
+        eps: VectorN<Scalar, DImnesnion>,
+        alpha: Scalar,
+    ) -> FinalResult<VectorN<Scalar, Dimension>> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(D, F, comparator, eps, alpha).result()
+    }
+    pub fn Mnimimum(
+        D: Area<Scalar>,
+        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        comparator: std::cmp::Ordering,
+        eps: VectorN<Scalar, DImnesnion>,
+        alpha: Scalar,
+    ) -> FinalResult<VectorN<Scalar, Dimension>> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(D, F, std::cmp::Ordering::Less, eps, alpha).result()
+    }
+    pub fn Maximum(
+        D: Area<Scalar>,
+        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
+        comparator: std::cmp::Ordering,
+        eps: VectorN<Scalar, DImnesnion>,
+        alpha: Scalar,
+    ) -> FinalResult<VectorN<Scalar, Dimension>> {
+        use crate::solvers::extremum_searcher::Search;
+        Self::new(D, F, std::cmp::Ordering::Greater, eps, alpha).result()
     }
 }
 
-impl<Scalar, Dimension> DescentMethod<Scalar, Dimension> for Gauss<Scalar, Dimension>
+impl<Scalar, Dimension> RandomSearchMethod<Scalar, Dimension> for Simple<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
     DefaultAllocator: Allocator<Scalar, Dimension>,
 {
-    fn S(&self) -> VectorN<Scalar, Dimension> {
-        let mut s = nalgebra::zero::<VectorN<Scalar, Dimension>>();
-        s[self.iters % Dimension::dim()] = Scalar::one();
-        s
-    }
 }
 
-impl<Scalar, Dimension> extremum_searcher::Search<VectorN<Scalar, Dimension>>
-    for Gauss<Scalar, Dimension>
+impl<Scalar, Dimension> minimize::Minimize<VectorN<Scalar, Dimension>> for Simple<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -92,7 +149,7 @@ where
     }
 }
 
-impl<Scalar, Dimension> Iterator for Gauss<Scalar, Dimension>
+impl<Scalar, Dimension> Iterator for Simple<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -100,42 +157,26 @@ where
 {
     type Item = IterationResult<VectorN<Scalar, Dimension>>;
     fn next(&mut self) -> Option<Self::Item> {
-        let is_extra =
-            if self.dx.iter().all(|xi| xi.abs() < self.eps) || self.iters >= self.max_iters {
-                true
-            } else {
-                false
-            };
-        let x = self.x.clone();
-        let f = self.f.clone();
-        let s = self.S();
-        let lambda_result = one_dimension_searchers::Search::result(
-            Scalar::zero(),
-            Arc::new(move |lambda| f(x.clone() + s.clone() * lambda)),
-            self.comparator,
-            one_dimension_searchers::Method::Fibonacci,
-            self.eps,
-            self.max_iters,
-        );
-        self.dx = self.S() * lambda_result.x();
-        self.x += self.dx.clone();
+        let is_extra = self.iters >= self.max_iters;
+        let x = self.D.get_random_point();
+        let dx = self.x - x;
+        let f = (self.f)(x);
+        if (self.f)(x).partial_cmp(f).unwrap() == self.comparator {
+            self._f = f;
+            self.x = x;
+        }
+        self.func_calls += 1;
         self.iters += 1;
-        self.func_calls += lambda_result.func_calls();
-        Some(IterationResult::new(
-            self.x.clone(),
-            self.dx.clone(),
-            lambda_result.func_calls(),
-            is_extra,
-        ))
+        Some(IterationResult::new(x, dx))
     }
 }
 
 #[derive(Clone)]
 pub enum Method {
-    Gauss,
+    Simple,
 }
 
-pub struct Search<Scalar, Dimension>
+pub struct Minimize<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -150,7 +191,7 @@ where
     >,
 }
 
-impl<Scalar, Dimension> Search<Scalar, Dimension>
+impl<Scalar, Dimension> Minimize<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -159,13 +200,12 @@ where
     pub fn new(
         x0: VectorN<Scalar, Dimension>,
         f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
-        comparator: std::cmp::Ordering,
         method: Method,
         eps: Scalar,
         max_iters: usize,
     ) -> Self {
         let m = match method {
-            Method::Gauss => Gauss::new(x0.clone(), f, comparator, eps, max_iters),
+            Method::Gauss => Gauss::new(x0.clone(), f, eps, max_iters),
         };
         Self {
             x: x0,
@@ -178,38 +218,18 @@ where
     pub fn result(
         x0: VectorN<Scalar, Dimension>,
         f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
-        comparator: std::cmp::Ordering,
         method: Method,
         eps: Scalar,
         max_iters: usize,
     ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
-        Self::new(x0, f, comparator, method, eps, max_iters).result()
-    }
-    pub fn Mnimimum(
-        x0: VectorN<Scalar, Dimension>,
-        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
-        method: Method,
-        eps: Scalar,
-        max_iters: usize,
-    ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
-        Self::new(x0, f, std::cmp::Ordering::Less, method, eps, max_iters).result()
-    }
-    pub fn Maximum(
-        x0: VectorN<Scalar, Dimension>,
-        f: Arc<dyn Fn(VectorN<Scalar, Dimension>) -> Scalar>,
-        method: Method,
-        eps: Scalar,
-        max_iters: usize,
-    ) -> FinalResult<VectorN<Scalar, Dimension>> {
-        use crate::solvers::extremum_searcher::Search;
-        Self::new(x0, f, std::cmp::Ordering::Greater, method, eps, max_iters).result()
+        <Self as minimize::Minimize<VectorN<Scalar, Dimension>>>::result(&mut Self::new(
+            x0, f, method, eps, max_iters,
+        ))
     }
 }
 
-impl<Scalar, Dimension> extremum_searcher::Search<VectorN<Scalar, Dimension>>
-    for Search<Scalar, Dimension>
+impl<Scalar, Dimension> minimize::Minimize<VectorN<Scalar, Dimension>>
+    for Minimize<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
@@ -229,7 +249,7 @@ where
     }
 }
 
-impl<Scalar, Dimension> Iterator for Search<Scalar, Dimension>
+impl<Scalar, Dimension> Iterator for Minimize<Scalar, Dimension>
 where
     Scalar: RealField,
     Dimension: DimName,
